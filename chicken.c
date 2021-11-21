@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <math.h>
+#include <string.h>
 
 #include "chicken.h"
 
@@ -23,7 +24,6 @@
 
 // ADD YOUR FUNCTION PROTOTYPES HERE
 int check_egglet_format(int format);
-int decimal_to_octal(int num);
 
 // print the files & directories stored in egg_pathname (subset 0)
 //
@@ -146,6 +146,8 @@ void list_egg(char *egg_pathname, int long_listing) {
 
 
 }
+
+    fclose(filename);
 }
 
 
@@ -263,6 +265,8 @@ void check_egg(char *egg_pathname) {
         }
 
         }
+
+        fclose(filename);
     
     // REPLACE THIS PRINTF WITH YOUR CODE
 
@@ -297,6 +301,12 @@ void extract_egg(char *egg_pathname) {
     
         if ((ch = fgetc(filename)) == 'd') {
             mode |= S_ISDIR(ch);
+        }
+
+        else if (ch != '-') {
+            fprintf(stderr, "Invalid Permission %c \n", ch);
+            exit(1);
+
         }
 
         if ((ch = fgetc(filename)) == 'r') {
@@ -458,8 +468,12 @@ void extract_egg(char *egg_pathname) {
             counter3++;
         }
 
+        fclose(fPtr);
+
         
     }
+
+    fclose(filename);
 
     // REPLACE THIS PRINTF WITH YOUR CODE
 
@@ -477,15 +491,172 @@ void extract_egg(char *egg_pathname) {
 void create_egg(char *egg_pathname, int append, int format,
                 int n_pathnames, char *pathnames[n_pathnames]) {
 
-    // REPLACE THIS CODE PRINTFS WITH YOUR CODE
+    FILE *filename = NULL;
 
-    printf("create_egg called to create egg: '%s'\n", egg_pathname);
-    printf("format = %x\n", format);
-    printf("append = %d\n", append);
-    printf("These %d pathnames specified:\n", n_pathnames);
-    for (int p = 0; p < n_pathnames; p++) {
-        printf("%s\n", pathnames[p]);
+    if (append) {
+        filename = fopen(egg_pathname, "a+");
+        if (filename == NULL) {
+            perror(egg_pathname);
+            exit(1);
+        }
+
     }
+
+    else {
+        filename = fopen(egg_pathname, "w+");
+        if (filename == NULL) {
+            perror(egg_pathname);
+            exit(1);
+        }
+    }
+
+    int ch = 0;
+
+    for (int p = 0; p < n_pathnames; p++) {
+
+        struct stat s;
+        if (stat(pathnames[p], &s) != 0) {
+            perror(pathnames[p]);
+            exit(1);
+        }
+
+        int hash_value = 0;
+
+        // magic num
+        ch = fputc('c', filename);
+        hash_value = egglet_hash(hash_value, ch);
+
+        // egglet format
+        // printf("%d\n", ch);
+        ch = fputc(format, filename);
+        // printf("%d\n", ch);
+        hash_value = egglet_hash(hash_value, ch);
+
+        mode_t m = s.st_mode;
+        char permission = 0;
+
+        if (S_ISREG(m)) { 
+            fputc('-', filename);
+            hash_value = egglet_hash(hash_value, '-');
+        } 
+        else if (S_ISDIR(m)) {
+            fputc('d', filename);
+            hash_value = egglet_hash(hash_value, 'd');
+        }
+    
+        permission = (m & S_IRUSR) ? 'r' : '-'; 
+        hash_value = egglet_hash(hash_value, permission);
+        fputc(permission, filename);
+        
+        permission = (m & S_IWUSR) ? 'w' : '-'; 
+        hash_value = egglet_hash(hash_value, permission);
+        fputc(permission, filename);
+        
+        permission = (m & S_IXUSR) ? 'x' : '-'; 
+        hash_value = egglet_hash(hash_value, permission);
+        fputc(permission, filename);
+    
+        // group permission
+        permission = (m & S_IRGRP) ? 'r' : '-'; 
+        hash_value = egglet_hash(hash_value, permission);
+        fputc(permission, filename);
+        
+        permission = (m & S_IWGRP) ? 'w' : '-'; 
+        hash_value = egglet_hash(hash_value, permission);
+        fputc(permission, filename);
+        
+        permission = (m & S_IXGRP) ? 'x' : '-'; 
+        hash_value = egglet_hash(hash_value, permission);
+        fputc(permission, filename);
+        
+        // other permission
+        permission = (m & S_IROTH) ? 'r' : '-'; 
+        hash_value = egglet_hash(hash_value, permission);
+        fputc(permission, filename);
+        
+        permission = (m & S_IWOTH) ? 'w' : '-'; 
+        hash_value = egglet_hash(hash_value, permission);
+        fputc(permission, filename);
+        
+        permission = (m & S_IXOTH) ? 'x' : '-'; 
+        hash_value = egglet_hash(hash_value, permission);
+        fputc(permission, filename);
+        
+        // Pathname length
+        int length = strlen(pathnames[p]);
+        unsigned char byte1 = (length & 255);
+        unsigned char byte2 = ((length >> 8) & 255);
+        ch = fputc(byte1, filename);
+        hash_value = egglet_hash(hash_value, ch);
+        ch = fputc(byte2, filename);
+        hash_value = egglet_hash(hash_value, ch);
+
+        // Pathname
+        int counter = 0;
+        printf("Adding: %s\n", pathnames[p]);
+        while (pathnames[p][counter] != '\0') {
+            ch = fputc(pathnames[p][counter], filename);
+            hash_value = egglet_hash(hash_value, ch);
+            counter++;
+        }
+
+        // FINDING CONTENT LENGTH
+        unsigned long counter1 = 0;
+        FILE *content = fopen(pathnames[p], "r");
+        while (fgetc(content) != EOF) {
+            counter1++;
+        }
+
+        fclose(content);
+
+        // Content Length
+
+        int bytes6 = counter1 & 0xFF;
+        ch = fputc(bytes6, filename);
+        hash_value = egglet_hash(hash_value, ch);
+
+        int bytes5 = (counter1 >> 8) & 0xFF;
+        ch = fputc(bytes5, filename);
+        hash_value = egglet_hash(hash_value, ch);
+
+        int bytes4 = (counter1 >> 16) & 0xFF;
+        ch = fputc(bytes4, filename);
+        hash_value = egglet_hash(hash_value, ch);
+
+        int bytes3 = (counter1 >> 24) & 0xFF;
+        ch = fputc(bytes3, filename);
+        hash_value = egglet_hash(hash_value, ch);
+
+        int bytes2 = (counter1 >> 32) & 0xFF;
+        ch = fputc(bytes2, filename);
+        hash_value = egglet_hash(hash_value, ch);
+
+        int bytes1 = (counter1 >> 40) & 0xFF;
+        ch = fputc(bytes1, filename);
+        hash_value = egglet_hash(hash_value, ch);
+
+
+
+        // Writing content.
+        FILE *content2 = fopen(pathnames[p], "r");
+        int counter2 = 0;
+        while (counter2 < counter1) {
+            ch = fgetc(content2);
+            fputc(ch, filename);
+            hash_value = egglet_hash(hash_value, ch);
+            counter2++;
+        }
+
+        fputc(hash_value, filename);
+        fclose(content2);
+        
+        
+    }
+
+    fclose(filename);
+
+
+
 }
 
 
@@ -507,17 +678,3 @@ int check_egglet_format(int format) {
     return 0;
 }
 
-int decimal_to_octal(int num) {
-    int octalnum = 0; 
-    int tmp = 1;
-
-    while (num != 0)
-    {
-    	octalnum = octalnum + (num % 8) * tmp;
-    	num = num / 8;
-        tmp = tmp * 10;
-    }
-
-    return octalnum;
-}
-	
