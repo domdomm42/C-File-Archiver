@@ -603,6 +603,10 @@ void create_egg(char *egg_pathname, int append, int format,
         // FINDING CONTENT LENGTH
         unsigned long counter1 = 0;
         FILE *content = fopen(pathnames[p], "r");
+        if (content == NULL) {
+            perror(pathnames[p]);
+            exit(1);
+        }
         while (fgetc(content) != EOF) {
             counter1++;
         }
@@ -639,6 +643,10 @@ void create_egg(char *egg_pathname, int append, int format,
 
         // Writing content.
         FILE *content2 = fopen(pathnames[p], "r");
+        if (content2 == NULL) {
+            perror(pathnames[p]);
+            exit(1);
+        }   
         int counter2 = 0;
         while (counter2 < counter1) {
             ch = fgetc(content2);
