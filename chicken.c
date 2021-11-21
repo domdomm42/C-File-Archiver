@@ -18,40 +18,39 @@
 
 #include "chicken.h"
 
-// ADD ANY extra #defines HERE
 #define NAME_LENGTH 100
 #define PERMISSION 11
 
-// ADD YOUR FUNCTION PROTOTYPES HERE
+
 int check_egglet_format(int format);
 
-// print the files & directories stored in egg_pathname (subset 0)
-//
-// if long_listing is non-zero then file/directory permissions, formats & sizes are also printed (subset 0)
 
+// Subset 0 
 void list_egg(char *egg_pathname, int long_listing) {
-    FILE *filename = fopen(egg_pathname, "r");
-        
-    if (filename == NULL) {
+    FILE *read_file = fopen(egg_pathname, "r");
+
+    // Error Checking
+    if (read_file == NULL) {
         perror(egg_pathname);
         exit(1);
     }
 
     if (long_listing) {
         int ch = 0;
-        fseek(filename, 11, SEEK_CUR);
+        fseek(read_file, 11, SEEK_CUR);
 
-        while ((ch = fgetc(filename)) != EOF) {
+        while ((ch = fgetc(read_file)) != EOF) {
+            
         char name[NAME_LENGTH];
         char permission[PERMISSION];
-        fseek(filename, -11, SEEK_CUR);
+        fseek(read_file, -11, SEEK_CUR);
 
-        int egglet_var = fgetc(filename);
+        int egglet_var = fgetc(read_file);
         egglet_var = check_egglet_format(egglet_var);
 
         int permission_count = 0;
         while (permission_count < 10) {
-            permission[permission_count] = fgetc(filename);
+            permission[permission_count] = fgetc(read_file);
             permission_count++;
         }
         permission[10] = '\0';
@@ -60,9 +59,10 @@ void list_egg(char *egg_pathname, int long_listing) {
         uint16_t length_path = 0;
         uint16_t mask = 0;
 
+        // Finding length of name, converted from little endian.
         while (counter1 < 2) {
             length_path = length_path << 8;
-            ch = fgetc(filename);
+            ch = fgetc(read_file);
             mask = ch;
             length_path = length_path | mask;
             counter1++;
@@ -70,9 +70,10 @@ void list_egg(char *egg_pathname, int long_listing) {
         }
         length_path = (length_path >> 8) | (length_path << 8);
 
+        // Filename 
         int i = 0;
         while (i < length_path) {
-            ch = fgetc(filename);
+            ch = fgetc(read_file);
             name[i] = ch;
             i++;
         }
@@ -82,17 +83,19 @@ void list_egg(char *egg_pathname, int long_listing) {
         uint64_t content_length = 0;
         uint64_t mask2 = 0;
         
-        ch = fgetc(filename);
+        // Finding Content_Length from little endian.
+        ch = fgetc(read_file);
         while (counter2 < 6) {
             mask2 = ch;
             mask2 = mask2 << (8 * counter2);
             content_length = content_length | mask2;
-            ch = fgetc(filename);
+            ch = fgetc(read_file);
 
             counter2++;
         }
 
-        fseek(filename, content_length + 11, SEEK_CUR);
+        // Jump to start of next egglet.
+        fseek(read_file, content_length + 11, SEEK_CUR);
     
         printf("%s %2d  %5lu  %s\n",permission, egglet_var, content_length, name);
         
@@ -101,16 +104,17 @@ void list_egg(char *egg_pathname, int long_listing) {
 
     else {
         int ch = 0;
-        fseek(filename, 11, SEEK_CUR);
-        while ((ch = fgetc(filename)) != EOF) {
+        fseek(read_file, 11, SEEK_CUR);
+        while ((ch = fgetc(read_file)) != EOF) {
 
             int counter1 = 0;
             uint16_t length_path = 0;
             uint16_t mask = 0;
 
+            // File length from little endian.
             while (counter1 < 2) {
                 length_path = length_path << 8;
-                ch = fgetc(filename);
+                ch = fgetc(read_file);
                 mask = ch;
                 length_path = length_path | mask;
                 counter1++;
@@ -118,9 +122,10 @@ void list_egg(char *egg_pathname, int long_listing) {
             }
             length_path = (length_path >> 8) | (length_path << 8);
 
+            // Printing out file name.
             int i = 0;
             while (i < length_path) {
-                ch = fgetc(filename);
+                ch = fgetc(read_file);
                 printf("%c", ch);
                 i++;
             }
@@ -130,50 +135,49 @@ void list_egg(char *egg_pathname, int long_listing) {
             uint64_t content_length = 0;
             uint64_t mask2 = 0;
             
-            ch = fgetc(filename);
+            // Finding content length so we know exactly how much to fseek.
+            ch = fgetc(read_file);
             while (counter2 < 6) {
                 mask2 = ch;
                 mask2 = mask2 << (8 * counter2);
                 content_length = content_length | mask2;
-                ch = fgetc(filename);
+                ch = fgetc(read_file);
 
                 counter2++;
             }
 
-            fseek(filename, content_length + 11, SEEK_CUR);
+            // Jump to start of next egglet
+            fseek(read_file, content_length + 11, SEEK_CUR);
    
     }
-
-
 }
 
-    fclose(filename);
+    fclose(read_file);
 }
 
 
-// check the files & directories stored in egg_pathname (subset 1)
-//
-// prints the files & directories stored in egg_pathname with a message
-// either, indicating the hash byte is correct, or
-// indicating the hash byte is incorrect, what the incorrect value is and the correct value would be
 
+// Subset 1
 void check_egg(char *egg_pathname) {
-    FILE *filename = fopen(egg_pathname, "r");
+    FILE *read_file = fopen(egg_pathname, "r");
 
-    if (filename == NULL) {
+    // Error checking when opening file.
+    if (read_file == NULL) {
         perror(egg_pathname);
         exit(1);
     }
     int ch = 0;
 
-    while ((ch = fgetc(filename)) != EOF) {
+    // This loop loops through every single egglet format to find hash.
+    while ((ch = fgetc(read_file)) != EOF) {
         int hash_value = 0;
         int byte_value = 0;
         
-        fseek(filename, -1, SEEK_CUR);
-        ch = fgetc(filename);
+        fseek(read_file, -1, SEEK_CUR);
+        ch = fgetc(read_file);
         hash_value = egglet_hash(hash_value, ch);
 
+        // Byte 0 
         int magic_number = ch;
             if (magic_number != 'c') {
                 fprintf(stderr, "error: incorrect first egglet byte: 0x%02x should be 0x63\n", magic_number);
@@ -183,14 +187,14 @@ void check_egg(char *egg_pathname) {
         char name[NAME_LENGTH];
         char permission[PERMISSION];
 
+        // Byte 1
         int egglet_var = ch;
-
         egglet_var = check_egglet_format(egglet_var);
 
         int permission_count = 0;
-
+        // Byte 2-11
         while (permission_count < 10) {
-            permission[permission_count] = fgetc(filename);
+            permission[permission_count] = fgetc(read_file);
             hash_value = egglet_hash(hash_value, permission[permission_count]);
             permission_count++;
         }
@@ -201,13 +205,14 @@ void check_egg(char *egg_pathname) {
         uint16_t length_path = 0;
         uint16_t mask = 0;
 
-        ch = fgetc(filename);
+        ch = fgetc(read_file);
         hash_value = egglet_hash(hash_value, ch);
 
+        // File name length convered from little endian
         while (counter1 < 2) {
             length_path = length_path << 8;
 
-            ch = fgetc(filename);
+            ch = fgetc(read_file);
             hash_value = egglet_hash(hash_value, ch);
 
             mask = ch;
@@ -215,13 +220,13 @@ void check_egg(char *egg_pathname) {
             counter1++;
 
         }
-
         length_path = (length_path >> 8) | (length_path << 8);
 
+        // Hashing characters from file name
         int i = 0;
         while (i < length_path) {
 
-            ch = fgetc(filename);
+            ch = fgetc(read_file);
             hash_value = egglet_hash(hash_value, ch);
 
             name[i] = ch;
@@ -233,28 +238,30 @@ void check_egg(char *egg_pathname) {
         uint64_t content_length = 0;
         uint64_t mask2 = 0;
         
-        ch = fgetc(filename);
+        ch = fgetc(read_file);
         hash_value = egglet_hash(hash_value, ch);
 
+        // Finding content length from little endian.
         while (counter2 < 6) {
             mask2 = ch;
             mask2 = mask2 << (8 * counter2);
             content_length = content_length | mask2;
 
-            ch = fgetc(filename);
+            ch = fgetc(read_file);
             hash_value = egglet_hash(hash_value, ch);
 
             counter2++;
         }
 
+
         int counter3 = 0;
         while (counter3 < content_length - 1) {
-            byte_value = fgetc(filename);
+            byte_value = fgetc(read_file);
             hash_value = egglet_hash(hash_value, byte_value);
             counter3++;
         }
 
-        int hash_value2 = fgetc(filename);
+        int hash_value2 = fgetc(read_file);
 
         if (hash_value == hash_value2) {
             printf("%s - correct hash\n", name);
@@ -266,40 +273,33 @@ void check_egg(char *egg_pathname) {
 
         }
 
-        fclose(filename);
+        fclose(read_file);
     
-    // REPLACE THIS PRINTF WITH YOUR CODE
-
-    // printf("check_egg called to check egg: '%s'\n", egg_pathname);
 }
 
-
-// extract the files/directories stored in egg_pathname (subset 2 & 3)
-
+// Subset 2 and 3
 void extract_egg(char *egg_pathname) {
 
-    FILE *filename = fopen(egg_pathname, "r");
-    if (filename == NULL) {
+    FILE *read_file = fopen(egg_pathname, "r");
+
+    // Error checking when reading
+    if (read_file == NULL) {
         perror(egg_pathname);
         exit(1);
     }
 
     int ch = 0;
-    // fseek(filename, 11, SEEK_CUR);
-
-    while ((ch = fgetc(filename)) != EOF) {
+    while ((ch = fgetc(read_file)) != EOF) {
         char name[NAME_LENGTH];
-        // char permission[PERMISSION];
-        // char binary[11];
-        // mode_t mode = 0;
-        // char *ptr;
     
-        int egglet_var = fgetc(filename);
+        int egglet_var = fgetc(read_file);
         egglet_var = check_egglet_format(egglet_var);
 
         int mode = 0;
     
-        if ((ch = fgetc(filename)) == 'd') {
+        // Permissions with else if statement, that is for example, the first set of conditions,
+        // If character is not 'd' or '-' then print an error!
+        if ((ch = fgetc(read_file)) == 'd') {
             mode |= S_ISDIR(ch);
         }
 
@@ -309,7 +309,7 @@ void extract_egg(char *egg_pathname) {
 
         }
 
-        if ((ch = fgetc(filename)) == 'r') {
+        if ((ch = fgetc(read_file)) == 'r') {
             mode |= S_IRUSR;
             
         }
@@ -320,7 +320,7 @@ void extract_egg(char *egg_pathname) {
 
         }
 
-        if ((ch = fgetc(filename)) == 'w') {
+        if ((ch = fgetc(read_file)) == 'w') {
             mode |= S_IWUSR;
             
         }
@@ -331,7 +331,7 @@ void extract_egg(char *egg_pathname) {
 
         }
 
-        if ((ch = fgetc(filename)) == 'x') {
+        if ((ch = fgetc(read_file)) == 'x') {
             mode |= S_IXUSR;
         }
 
@@ -341,7 +341,7 @@ void extract_egg(char *egg_pathname) {
 
         }
 
-        if ((ch = fgetc(filename)) == 'r') {
+        if ((ch = fgetc(read_file)) == 'r') {
             mode |= S_IRGRP;
         }
 
@@ -351,7 +351,7 @@ void extract_egg(char *egg_pathname) {
 
         }
 
-        if ((ch = fgetc(filename)) == 'w') {
+        if ((ch = fgetc(read_file)) == 'w') {
             mode |= S_IWGRP;
         }
 
@@ -361,7 +361,7 @@ void extract_egg(char *egg_pathname) {
 
         }
 
-        if ((ch = fgetc(filename)) == 'x') {
+        if ((ch = fgetc(read_file)) == 'x') {
             mode |= S_IXGRP;
         }
 
@@ -371,7 +371,7 @@ void extract_egg(char *egg_pathname) {
 
         } 
 
-        if ((ch = fgetc(filename)) == 'r') {
+        if ((ch = fgetc(read_file)) == 'r') {
             mode |= S_IROTH;
         }
 
@@ -382,7 +382,7 @@ void extract_egg(char *egg_pathname) {
         } 
         
 
-        if ((ch = fgetc(filename)) == 'w') {
+        if ((ch = fgetc(read_file)) == 'w') {
             mode |= S_IWOTH;
         }
 
@@ -392,7 +392,7 @@ void extract_egg(char *egg_pathname) {
 
         } 
 
-        if ((ch = fgetc(filename)) == 'x') {
+        if ((ch = fgetc(read_file)) == 'x') {
             mode |= S_IXOTH;
         }
 
@@ -411,7 +411,7 @@ void extract_egg(char *egg_pathname) {
         // FINDING FILE NAME LENGTH
         while (counter1 < 2) {
             length_path = length_path << 8;
-            ch = fgetc(filename);
+            ch = fgetc(read_file);
             mask = ch;
             length_path = length_path | mask;
             counter1++;
@@ -422,7 +422,7 @@ void extract_egg(char *egg_pathname) {
         // STORING FILE NAME
         int i = 0;
         while (i < length_path) {
-            ch = fgetc(filename);
+            ch = fgetc(read_file);
             name[i] = ch;
             i++;
         }
@@ -446,16 +446,15 @@ void extract_egg(char *egg_pathname) {
         uint64_t mask2 = 0;
         
         // FINDING CONTENT LENGTH
-        ch = fgetc(filename);
+        ch = fgetc(read_file);
         while (counter2 < 6) {
             mask2 = ch;
             mask2 = mask2 << (8 * counter2);
             content_length = content_length | mask2;
-            ch = fgetc(filename);
+            ch = fgetc(read_file);
 
             counter2++;
         }
-        // printf("%ld\n", content_length);
 
         // WRITING CONTENT
         printf("Extracting: %s\n", name);
@@ -463,7 +462,7 @@ void extract_egg(char *egg_pathname) {
 
         while (counter3 < content_length) {
             fputc(ch, fPtr);
-            ch = fgetc(filename);
+            ch = fgetc(read_file);
             // fputc(ch, fPtr);
             counter3++;
         }
@@ -473,24 +472,17 @@ void extract_egg(char *egg_pathname) {
         
     }
 
-    fclose(filename);
+    fclose(read_file);
 
-    // REPLACE THIS PRINTF WITH YOUR CODE
-
-    // printf("extract_egg called to extract egg: '%s'\n", egg_pathname);
 }
 
 
-// create egg_pathname containing the files or directories specified in pathnames (subset 3)
-//
-// if append is zero egg_pathname should be over-written if it exists
-// if append is non-zero egglets should be instead appended to egg_pathname if it exists
-//
-// format specifies the egglet format to use, it must be one EGGLET_FMT_6,EGGLET_FMT_7 or EGGLET_FMT_8
 
+// Subset 3
 void create_egg(char *egg_pathname, int append, int format,
                 int n_pathnames, char *pathnames[n_pathnames]) {
 
+    // Stored as NULL early on so no error will be given due to if-else statements
     FILE *filename = NULL;
 
     if (append) {
@@ -510,8 +502,10 @@ void create_egg(char *egg_pathname, int append, int format,
         }
     }
 
-    int ch = 0;
+    // Loop, every step has to be hashed to provide a valid 
+    // and correct Hashing value at the final byte of egg.
 
+    int ch = 0;
     for (int p = 0; p < n_pathnames; p++) {
 
         struct stat s;
@@ -527,14 +521,14 @@ void create_egg(char *egg_pathname, int append, int format,
         hash_value = egglet_hash(hash_value, ch);
 
         // egglet format
-        // printf("%d\n", ch);
         ch = fputc(format, filename);
-        // printf("%d\n", ch);
         hash_value = egglet_hash(hash_value, ch);
 
         mode_t m = s.st_mode;
         char permission = 0;
 
+
+        // Permissions
         if (S_ISREG(m)) { 
             fputc('-', filename);
             hash_value = egglet_hash(hash_value, '-');
@@ -591,7 +585,7 @@ void create_egg(char *egg_pathname, int append, int format,
         ch = fputc(byte2, filename);
         hash_value = egglet_hash(hash_value, ch);
 
-        // Pathname
+        // Pathname with hashes.
         int counter = 0;
         printf("Adding: %s\n", pathnames[p]);
         while (pathnames[p][counter] != '\0') {
@@ -613,8 +607,8 @@ void create_egg(char *egg_pathname, int append, int format,
 
         fclose(content);
 
-        // Content Length
 
+        // Content Length, Given at this order so that it is in Little Endian.
         int bytes6 = counter1 & 0xFF;
         ch = fputc(bytes6, filename);
         hash_value = egglet_hash(hash_value, ch);
@@ -663,12 +657,10 @@ void create_egg(char *egg_pathname, int append, int format,
 
     fclose(filename);
 
-
-
 }
 
 
-// ADD YOUR EXTRA FUNCTIONS HERE
+
 int check_egglet_format(int format) {
 
     if (format == 54) {
